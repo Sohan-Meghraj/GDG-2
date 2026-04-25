@@ -1,27 +1,21 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- deps ----------
-FROM node:20-alpine AS deps
-RUN apk add --no-cache libc6-compat
+FROM node:20-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 # ---------- builder ----------
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# NEXT_PUBLIC_* must be available at build time so they get inlined into the client bundle.
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ---------- runner ----------
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -30,8 +24,8 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
 # Non-root user
-RUN addgroup --system --gid 1001 nodejs \
- && adduser --system --uid 1001 nextjs
+RUN groupadd --system --gid 1001 nodejs \
+ && useradd --system --uid 1001 --gid nodejs nextjs
 
 # Public assets
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
