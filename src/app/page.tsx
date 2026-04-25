@@ -266,15 +266,31 @@ function WelcomeBanner() {
 /*                                   Page                                      */
 /* -------------------------------------------------------------------------- */
 
+function LoadingState() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 5000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div className="grid min-h-[70vh] place-items-center">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
+        {slow && (
+          <p className="text-xs text-white/50">
+            Taking longer than expected — check your connection
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const { user, profile, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="grid min-h-[70vh] place-items-center">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
-      </div>
-    );
+    return <LoadingState />;
   }
 
   return (

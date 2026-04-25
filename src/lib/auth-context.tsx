@@ -126,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthCtx.Provider
-      value={{ user, profile, session, loading, signIn, signUp, signOutUser, refreshProfile, getAccessToken }}
+      value={{ user, profile, session, loading, error, signIn, signUp, signOutUser, refreshProfile, getAccessToken }}
     >
       {children}
     </AuthCtx.Provider>
