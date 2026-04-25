@@ -1,0 +1,100 @@
+import { getGemini, GEMINI_MODEL } from "@/lib/gemini";
+import type { IcebreakerResponse, UserProfile } from "@/lib/types";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type IcebreakerRequestBody = {
+  me?: UserProfile;
+  peer?: UserProfile;
+};
+
+function compactProfile(p: UserProfile) {
+  return {
+    name: p.name,
+    headline: p.headline ?? "",
+    skills: p.skills ?? [],
+    interests: p.interests ?? [],
+    goal: p.goal ?? "",
+    lookingFor: p.lookingFor ?? [],
+    company: p.company ?? "",
+    college: p.college ?? "",
+  };
+}
+
+const SYSTEM_PROMPT = `You are a sharp networking coach helping attendees connect at GDG Hyderabad, a tech event in India.
+
+Your job: given two attendee profiles ("me" and "peer"), produce a JSON object that helps "me" start a real, specific conversation with "peer".
+
+Output ONLY valid JSON matching this exact shape (no markdown, no commentary):
+{
+  "matchScore": number,           // integer 0-100
+  "matchReasons": string[],       // 3-5 bullets
+  "icebreakers": string[],        // exactly 3
+  "collabIdea": string,           // 1 sentence, <= 20 words
+  "whatToAvoid": string           // optional, omit field if no real risk
+}
+
+Scoring (return an integer 0-100):
+- 40% shared interests (overlap between me.interests and peer.interests)
+- 30% complementary skills (skills that fit together, e.g. backend + design)
+- 20% goal alignment (do their goals/lookingFor mesh)
+- 10% other context (same company, same college, similar headline)
+
+matchReasons: 3-5 bullets, each <= 12 words. Be concrete and specific. Cite actual skill or interest names from the profiles. No vague filler like "both love tech".
+
+icebreakers: EXACTLY 3 opening lines, each <= 25 words. Each MUST reference a specific shared interest, skill, or context detail by name. Sound human, casual, slightly curious — like something you'd actually say out loud. Banned: "How's your event going?", "Nice to meet you", "What brings you here?", or any generic small talk.
+
+collabIdea: ONE sentence (<= 20 words) describing a concrete project, hack, or topic they could build or discuss together — grounded in their actual skills/interests.
+
+whatToAvoid: Include only if there's a real risk (seniority gap, mismatched expectations, sensitive topic). One short sentence. If no real risk, omit the field entirely.`;
+
+export async function POST(request: Request) {
+  let rawText: string | undefined;
+  try {
+    const body = (await request.json()) as IcebreakerRequestBody;
+    if (!body || !body.me || !body.peer) {
+      return Response.json(
+        { error: "Missing 'me' or 'peer' in request body" },
+        { status: 400 },
+      );
+    }
+
+    const model = getGemini().getGenerativeModel({
+      model: GEMINI_MODEL,
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.85,
+      },
+    });
+
+    const userPrompt = `me=${JSON.stringify(compactProfile(body.me))}\npeer=${JSON.stringify(compactProfile(body.peer))}`;
+
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: `${SYSTEM_PROMPT}\n\n${userPrompt}` }],
+        },
+      ],
+    });
+
+    rawText = result.response.text();
+
+    let parsed: IcebreakerResponse;
+    try {
+      parsed = JSON.parse(rawText) as IcebreakerResponse;
+    } catch {
+      console.error("Icebreaker: AI returned invalid JSON. Raw:", rawText);
+      return Response.json(
+        { error: "AI returned invalid JSON", raw: rawText },
+        { status: 502 },
+      );
+    }
+
+    return Response.json(parsed);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return Response.json({ error: msg }, { status: 500 });
+  }
+}
