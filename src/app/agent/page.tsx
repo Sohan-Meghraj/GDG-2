@@ -9,7 +9,6 @@ import {
 } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { getFirebaseAuth } from "@/lib/firebase";
 import { Bot, Loader2, Send, Sparkles, Wrench } from "lucide-react";
 
 type ToolCall = {
@@ -203,7 +202,7 @@ function TypingDots() {
 }
 
 export default function AgentPage() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, getAccessToken } = useAuth();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -290,8 +289,7 @@ export default function AgentPage() {
     setError(null);
 
     try {
-      const auth = getFirebaseAuth();
-      const token = await auth.currentUser?.getIdToken();
+      const token = await getAccessToken();
       if (!token) {
         setMessages((prev) => [
           ...prev,

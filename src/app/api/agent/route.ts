@@ -1,11 +1,7 @@
 import { getGemini, GEMINI_MODEL } from "@/lib/gemini";
 import { executeTool, tools } from "@/lib/agent-tools";
+import { verifyToken, supabaseAsUser, getProfileServer } from "@/lib/supabase-server";
 import type { UserProfile } from "@/lib/types";
-
-async function loadAdmin() {
-  const mod = await import("@/lib/firebase-admin");
-  return { adminAuth: mod.adminAuth, adminDb: mod.adminDb };
-}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,42 +47,22 @@ export async function POST(request: Request) {
     if (!authHeader || !authHeader.toLowerCase().startsWith("bearer ")) {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
-    const token = authHeader.slice(7).trim();
-    if (!token) {
+    const accessToken = authHeader.slice(7).trim();
+    if (!accessToken) {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    const { adminAuth, adminDb } = await loadAdmin();
-
-    let uid: string;
-    try {
-      const decoded = await adminAuth().verifyIdToken(token);
-      uid = decoded.uid;
-    } catch {
+    const user = await verifyToken(accessToken);
+    if (!user) {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
+    const uid = user.id;
 
-    const profileSnap = await adminDb().collection("users").doc(uid).get();
-    if (!profileSnap.exists) {
+    const client = supabaseAsUser(accessToken);
+    const me = await getProfileServer(client, uid);
+    if (!me) {
       return Response.json({ error: "profile_not_found" }, { status: 404 });
     }
-    const data = profileSnap.data() as Partial<UserProfile> & { id?: string };
-    const me: UserProfile = {
-      id: data.id ?? profileSnap.id,
-      name: data.name ?? "",
-      email: data.email ?? "",
-      photoURL: data.photoURL,
-      headline: data.headline,
-      skills: data.skills ?? [],
-      interests: data.interests ?? [],
-      goal: data.goal,
-      lookingFor: data.lookingFor,
-      company: data.company,
-      college: data.college,
-      social: data.social,
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt,
-    };
 
     let body: AgentRequestBody;
     try {
@@ -130,7 +106,7 @@ export async function POST(request: Request) {
       const fnResponses = [];
       for (const call of calls) {
         const rawArgs = (call.args ?? {}) as Record<string, unknown>;
-        const out = await executeTool(call.name, rawArgs, { uid, me });
+        const out = await executeTool(call.name, rawArgs, { uid, me, accessToken });
         trace.push({ tool: call.name, args: rawArgs, result: out });
         fnResponses.push({
           functionResponse: {

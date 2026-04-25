@@ -3,14 +3,13 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useAuth } from "@/lib/auth-context";
-import { getFirebaseDb } from "@/lib/firebase";
-import type {
-  Connection,
-  IcebreakerResponse,
-  UserProfile,
-} from "@/lib/types";
+import {
+  fetchProfile,
+  fetchExistingConnection,
+  saveConnection as saveConnectionRow,
+} from "@/lib/supabase";
+import type { IcebreakerResponse, UserProfile } from "@/lib/types";
 import {
   Loader2,
   Sparkles,
@@ -130,7 +129,7 @@ function CopyButton({ text }: { text: string }) {
 
 export default function ProfilePage({ params }: PageProps) {
   const { id } = use(params);
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, getAccessToken } = useAuth();
 
   const [peer, setPeer] = useState<UserProfile | null>(null);
   const [peerLoading, setPeerLoading] = useState(true);
@@ -144,7 +143,7 @@ export default function ProfilePage({ params }: PageProps) {
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const isSelf = user?.uid === id;
+  const isSelf = user?.id === id;
 
   useEffect(() => {
     let cancelled = false;
@@ -152,13 +151,9 @@ export default function ProfilePage({ params }: PageProps) {
       setPeerLoading(true);
       setPeerError(null);
       try {
-        const snap = await getDoc(doc(getFirebaseDb(), "users", id));
+        const p = await fetchProfile(id);
         if (cancelled) return;
-        if (!snap.exists()) {
-          setPeer(null);
-        } else {
-          setPeer(snap.data() as UserProfile);
-        }
+        setPeer(p);
       } catch (err) {
         if (!cancelled)
           setPeerError(
@@ -179,10 +174,8 @@ export default function ProfilePage({ params }: PageProps) {
     let cancelled = false;
     (async () => {
       try {
-        const snap = await getDoc(
-          doc(getFirebaseDb(), "connections", `${user.uid}_${peer.id}`)
-        );
-        if (!cancelled && snap.exists()) setSaved(true);
+        const existing = await fetchExistingConnection(user.id, peer.id);
+        if (!cancelled && existing) setSaved(true);
       } catch {
         // ignore
       }
@@ -198,9 +191,13 @@ export default function ProfilePage({ params }: PageProps) {
     setGenError(null);
     setResult(null);
     try {
+      const token = await getAccessToken();
       const res = await fetch("/api/icebreaker", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ me: profile, peer }),
       });
       if (!res.ok) {
@@ -223,9 +220,8 @@ export default function ProfilePage({ params }: PageProps) {
     setSaving(true);
     setSaveError(null);
     try {
-      const data: Connection = {
-        id: `${user.uid}_${peer.id}`,
-        ownerId: user.uid,
+      await saveConnectionRow({
+        ownerId: user.id,
         peerId: peer.id,
         peerSnapshot: {
           id: peer.id,
@@ -238,12 +234,8 @@ export default function ProfilePage({ params }: PageProps) {
         matchScore: result.matchScore,
         matchReasons: result.matchReasons,
         icebreakers: result.icebreakers,
-        createdAt: Date.now(),
-      };
-      await setDoc(
-        doc(getFirebaseDb(), "connections", `${user.uid}_${peer.id}`),
-        data
-      );
+        collabIdea: result.collabIdea,
+      });
       setSaved(true);
     } catch (err) {
       setSaveError(

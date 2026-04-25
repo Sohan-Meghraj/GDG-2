@@ -1,14 +1,15 @@
 import { type FunctionDeclaration, SchemaType } from "@google/generative-ai";
 import { generateIcebreaker } from "@/lib/ai/icebreaker-core";
 import { generateFollowUps } from "@/lib/ai/follow-up-core";
+import {
+  supabaseAsUser,
+  getProfileServer,
+  listAttendeesServer,
+  listMyConnectionsServer,
+} from "@/lib/supabase-server";
 import type { UserProfile } from "@/lib/types";
 
-async function adminDb() {
-  const mod = await import("@/lib/firebase-admin");
-  return mod.adminDb();
-}
-
-export type ToolContext = { uid: string; me: UserProfile };
+export type ToolContext = { uid: string; me: UserProfile; accessToken: string };
 
 type CompactProfile = {
   id: string;
@@ -81,7 +82,7 @@ export const tools: FunctionDeclaration[] = [
       properties: {
         userId: {
           type: SchemaType.STRING,
-          description: "The Firestore user id of the attendee.",
+          description: "The user id of the attendee.",
         },
       },
       required: ["userId"],
@@ -183,29 +184,6 @@ function scoreProfile(p: UserProfile, terms: string[]): number {
   return score;
 }
 
-async function loadAllUsers(): Promise<UserProfile[]> {
-  const db = await adminDb();
-  const snap = await db.collection("users").limit(100).get();
-  const users: UserProfile[] = [];
-  for (const doc of snap.docs) {
-    const data = doc.data() as Partial<UserProfile> & { id?: string };
-    users.push({
-      id: data.id ?? doc.id,
-      name: data.name ?? "",
-      email: "",
-      photoURL: data.photoURL,
-      headline: data.headline,
-      skills: data.skills ?? [],
-      interests: data.interests ?? [],
-      goal: data.goal,
-      lookingFor: data.lookingFor,
-      company: data.company,
-      college: data.college,
-    });
-  }
-  return users;
-}
-
 async function searchAttendeesImpl(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -225,9 +203,9 @@ async function searchAttendeesImpl(
     }
   }
 
-  const users = await loadAllUsers();
+  const client = supabaseAsUser(ctx.accessToken);
+  const users = await listAttendeesServer(client, ctx.uid, 100);
   const scored = users
-    .filter((u) => u.id !== ctx.uid)
     .map((u) => ({ u, s: scoreProfile(u, terms) }))
     .filter((x) => (terms.length === 0 ? true : x.s > 0))
     .sort((a, b) => b.s - a.s)
@@ -239,55 +217,28 @@ async function searchAttendeesImpl(
 async function getMyConnectionsImpl(
   ctx: ToolContext,
 ): Promise<{ connections: ConnectionSummary[] }> {
-  const db = await adminDb();
-  const snap = await db
-    .collection("connections")
-    .where("ownerId", "==", ctx.uid)
-    .limit(50)
-    .get();
-  const out: ConnectionSummary[] = [];
-  for (const doc of snap.docs) {
-    const d = doc.data() as Record<string, unknown>;
-    const peerSnapshot = (d.peerSnapshot ?? {}) as Record<string, unknown>;
-    out.push({
-      peerId: asString(d.peerId) ?? "",
-      peerName: asString(peerSnapshot.name) ?? asString(d.peerName) ?? "",
-      peerHeadline: asString(peerSnapshot.headline),
-      peerSkills: asStringArray(peerSnapshot.skills),
-      peerInterests: asStringArray(peerSnapshot.interests),
-      matchScore: asNumber(d.matchScore),
-      savedAt: asNumber(d.createdAt),
-    });
-  }
-  return { connections: out };
-}
-
-async function readUser(userId: string): Promise<UserProfile | null> {
-  const db = await adminDb();
-  const snap = await db.collection("users").doc(userId).get();
-  if (!snap.exists) return null;
-  const data = snap.data() as Partial<UserProfile> & { id?: string };
-  return {
-    id: data.id ?? snap.id,
-    name: data.name ?? "",
-    email: "",
-    photoURL: data.photoURL,
-    headline: data.headline,
-    skills: data.skills ?? [],
-    interests: data.interests ?? [],
-    goal: data.goal,
-    lookingFor: data.lookingFor,
-    company: data.company,
-    college: data.college,
-  };
+  const client = supabaseAsUser(ctx.accessToken);
+  const rows = await listMyConnectionsServer(client, ctx.uid);
+  const connections: ConnectionSummary[] = rows.map((r) => ({
+    peerId: r.peerId,
+    peerName: r.peerName,
+    peerHeadline: r.peerHeadline,
+    peerSkills: r.peerSkills,
+    peerInterests: r.peerInterests,
+    matchScore: r.matchScore,
+    savedAt: r.savedAt,
+  }));
+  return { connections };
 }
 
 async function getProfileImpl(
   args: Record<string, unknown>,
+  ctx: ToolContext,
 ): Promise<CompactProfile | { error: string }> {
   const userId = asString(args.userId);
   if (!userId) return { error: "userId required" };
-  const u = await readUser(userId);
+  const client = supabaseAsUser(ctx.accessToken);
+  const u = await getProfileServer(client, userId);
   if (!u) return { error: "not_found" };
   return stripPrivate(u);
 }
@@ -298,7 +249,8 @@ async function generateIcebreakerImpl(
 ): Promise<unknown> {
   const peerId = asString(args.peerId);
   if (!peerId) return { error: "peerId required" };
-  const peer = await readUser(peerId);
+  const client = supabaseAsUser(ctx.accessToken);
+  const peer = await getProfileServer(client, peerId);
   if (!peer) return { error: "peer_not_found" };
   return await generateIcebreaker(ctx.me, peer);
 }
@@ -332,7 +284,8 @@ async function proposeTeamImpl(
   const sizeRaw = asNumber(args.size);
   const size = Math.max(1, Math.min(neededRoles.length, sizeRaw ?? neededRoles.length));
 
-  const users = (await loadAllUsers()).filter((u) => u.id !== ctx.uid);
+  const client = supabaseAsUser(ctx.accessToken);
+  const users = await listAttendeesServer(client, ctx.uid, 100);
   const picked = new Set<string>();
   const team: Array<{
     id: string;
@@ -389,7 +342,7 @@ export async function executeTool(
     case "getMyConnections":
       return await getMyConnectionsImpl(ctx);
     case "getProfile":
-      return await getProfileImpl(args);
+      return await getProfileImpl(args, ctx);
     case "generateIcebreaker":
       return await generateIcebreakerImpl(args, ctx);
     case "draftFollowUps":

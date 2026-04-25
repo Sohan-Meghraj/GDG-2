@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { doc, setDoc } from "firebase/firestore";
 import { useAuth } from "@/lib/auth-context";
-import { getFirebaseDb } from "@/lib/firebase";
+import { upsertProfile } from "@/lib/supabase";
 import { ChipInput } from "@/components/chip-input";
-import type { UserProfile } from "@/lib/types";
 import { Loader2, Sparkles } from "lucide-react";
 
 const GOALS = [
@@ -38,9 +36,13 @@ export default function OnboardingPage() {
       router.replace("/login");
       return;
     }
-    if (!name && user.displayName) setName(user.displayName);
+    const metadataName =
+      typeof user.user_metadata?.name === "string"
+        ? user.user_metadata.name
+        : "";
+    if (!name && metadataName) setName(metadataName);
     if (profile) {
-      setName(profile.name || user.displayName || "");
+      setName(profile.name || metadataName || "");
       setHeadline(profile.headline || "");
       setSkills(profile.skills || []);
       setInterests(profile.interests || []);
@@ -61,11 +63,9 @@ export default function OnboardingPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const now = Date.now();
-      const data: UserProfile = {
-        id: user.uid,
+      await upsertProfile({
+        id: user.id,
         email: user.email ?? "",
-        photoURL: user.photoURL ?? undefined,
         name: name.trim(),
         headline: headline.trim() || undefined,
         skills,
@@ -73,11 +73,7 @@ export default function OnboardingPage() {
         goal,
         lookingFor,
         company: orgInput.trim() || undefined,
-        createdAt: profile?.createdAt ?? now,
-        updatedAt: now,
-      };
-      await setDoc(doc(getFirebaseDb(), "users", user.uid), data, {
-        merge: true,
+        college: profile?.college,
       });
       await refreshProfile();
       router.push("/badge");

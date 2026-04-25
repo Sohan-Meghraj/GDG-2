@@ -23,7 +23,7 @@ export default function BadgePage() {
       return;
     }
     if (typeof window !== "undefined") {
-      setQrValue(`${window.location.origin}/profile/${user.uid}`);
+      setQrValue(`${window.location.origin}/profile/${user.id}`);
     }
   }, [user, profile, loading, router]);
 

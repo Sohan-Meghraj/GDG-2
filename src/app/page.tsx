@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import {
   Loader2,
@@ -131,7 +132,7 @@ function PhoneMockup() {
               <h3 className="mt-3 text-lg font-semibold">Priya Reddy</h3>
               <p className="text-sm text-white/50">Backend at Razorpay</p>
               <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                {["Firebase", "Gemini", "Go"].map((t) => (
+                {["Supabase", "Gemini", "Go"].map((t) => (
                   <span key={t} className="tag">
                     {t}
                   </span>
@@ -178,8 +179,9 @@ function PrimaryCTA({
   size?: "lg" | "xl";
   className?: string;
 }) {
-  const { user, profile, signInGoogle } = useAuth();
-  const [signing, setSigning] = useState(false);
+  const { user, profile } = useAuth();
+  const router = useRouter();
+  const [navigating, setNavigating] = useState(false);
 
   const sizing =
     size === "xl"
@@ -191,28 +193,20 @@ function PrimaryCTA({
   if (!user) {
     return (
       <button
-        onClick={async () => {
-          setSigning(true);
-          try {
-            await signInGoogle();
-          } finally {
-            setSigning(false);
-          }
+        onClick={() => {
+          setNavigating(true);
+          router.push("/login");
         }}
-        disabled={signing}
+        disabled={navigating}
         className={`${base} ${sizing} ${className}`}
       >
-        {signing ? (
+        {navigating ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
           <>
-            <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden>
-              <path
-                fill="currentColor"
-                d="M21.35 11.1H12v3.2h5.35c-.23 1.4-1.66 4.1-5.35 4.1-3.22 0-5.85-2.66-5.85-5.95s2.63-5.95 5.85-5.95c1.84 0 3.06.78 3.76 1.45l2.56-2.46C16.78 3.99 14.66 3 12 3 6.98 3 3 6.98 3 12s3.98 9 9 9c5.2 0 8.65-3.65 8.65-8.79 0-.59-.06-1.04-.15-1.51z"
-              />
-            </svg>
-            Sign in with Google
+            <Sparkles className="h-4 w-4" />
+            Get started
+            <ArrowRight className="h-4 w-4" />
           </>
         )}
       </button>
@@ -313,7 +307,7 @@ export default function LandingPage() {
             <div className="absolute -inset-px rounded-full bg-gradient-to-r from-indigo-500/60 via-fuchsia-500/60 to-pink-500/60 blur-sm" />
             <span className="relative inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/80 px-4 py-1.5 text-xs font-medium text-white/80 backdrop-blur">
               <Sparkles className="h-3.5 w-3.5 text-pink-400" />
-              Powered by Gemini 2.0 + Firebase
+              Powered by Gemini 2.0 + Supabase
             </span>
           </div>
 
@@ -782,11 +776,11 @@ export default function LandingPage() {
           <div className="mt-12 flex flex-wrap items-center justify-center gap-2.5">
             {[
               "Gemini 2.0 Flash",
-              "Firebase Auth",
-              "Cloud Firestore",
-              "Firebase App Hosting",
+              "Supabase Auth",
+              "Postgres + RLS",
               "Cloud Run",
-              "Vertex AI",
+              "Next.js 16",
+              "Tailwind v4",
             ].map((t) => (
               <span
                 key={t}

@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { collection, getDocs, query, where } from "firebase/firestore";
 import { useAuth } from "@/lib/auth-context";
-import { getFirebaseDb } from "@/lib/firebase";
+import { fetchMyConnections } from "@/lib/supabase";
 import type { Connection, FollowUpMessage } from "@/lib/types";
 import {
   Loader2,
@@ -49,7 +48,7 @@ function CopyButton({ text }: { text: string }) {
 
 export default function FollowUpPage() {
   const router = useRouter();
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, getAccessToken } = useAuth();
 
   const [connections, setConnections] = useState<Connection[] | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -73,14 +72,7 @@ export default function FollowUpPage() {
     setGenerating(true);
     setMessages(null);
     try {
-      const snap = await getDocs(
-        query(
-          collection(getFirebaseDb(), "connections"),
-          where("ownerId", "==", user.uid)
-        )
-      );
-      const list = snap.docs.map((d) => d.data() as Connection);
-      list.sort((a, b) => b.createdAt - a.createdAt);
+      const list = await fetchMyConnections(user.id);
       setConnections(list);
 
       if (list.length === 0) {
@@ -90,7 +82,7 @@ export default function FollowUpPage() {
 
       const payload = {
         me: profile,
-        connections: list.map((c) => ({
+        connections: list.map((c: Connection) => ({
           peerId: c.peerId,
           peerName: c.peerSnapshot.name,
           peerSkills: c.peerSnapshot.skills ?? [],
@@ -98,9 +90,13 @@ export default function FollowUpPage() {
         })),
       };
 
+      const token = await getAccessToken();
       const res = await fetch("/api/follow-up", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {

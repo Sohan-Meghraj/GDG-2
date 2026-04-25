@@ -4,9 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { collection, getDocs, query, where } from "firebase/firestore";
 import { useAuth } from "@/lib/auth-context";
-import { getFirebaseDb } from "@/lib/firebase";
+import { fetchMyConnections } from "@/lib/supabase";
 import type { Connection } from "@/lib/types";
 import { Loader2, Users, Sparkles, ScanLine } from "lucide-react";
 
@@ -31,14 +30,7 @@ export default function ConnectionsPage() {
     if (!user) return;
     setError(null);
     try {
-      const snap = await getDocs(
-        query(
-          collection(getFirebaseDb(), "connections"),
-          where("ownerId", "==", user.uid)
-        )
-      );
-      const list = snap.docs.map((d) => d.data() as Connection);
-      list.sort((a, b) => b.createdAt - a.createdAt);
+      const list = await fetchMyConnections(user.id);
       setConnections(list);
     } catch (err) {
       setError(
