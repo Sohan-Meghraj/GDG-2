@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { LogOut, ScanLine, IdCard, Users, Sparkles } from "lucide-react";
+import { LogOut, ScanLine, IdCard, Users, Sparkles, Bot } from "lucide-react";
 
 export function TopNav() {
   const { user, profile, signOutUser } = useAuth();
@@ -23,6 +23,9 @@ export function TopNav() {
             </Link>
             <Link href="/scan" className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-white/70 hover:bg-white/5 hover:text-white">
               <ScanLine className="h-4 w-4" /> <span className="hidden sm:inline">Scan</span>
+            </Link>
+            <Link href="/agent" className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-white/70 hover:bg-white/5 hover:text-white">
+              <Bot className="h-4 w-4" /> <span className="hidden sm:inline">AI Buddy</span>
             </Link>
             <Link href="/connections" className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-white/70 hover:bg-white/5 hover:text-white">
               <Users className="h-4 w-4" /> <span className="hidden sm:inline">Connections</span>
