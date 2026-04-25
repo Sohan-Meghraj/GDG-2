@@ -8,10 +8,14 @@ let _client: SupabaseClient | null = null;
 
 export function getSupabase(): SupabaseClient {
   if (_client) return _client;
-  _client = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error(
+      "Supabase not configured: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY missing at build time. Re-build with these env vars set."
+    );
+  }
+  _client = createBrowserClient(url, anonKey);
   return _client;
 }
 

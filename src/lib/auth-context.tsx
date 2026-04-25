@@ -10,6 +10,7 @@ type AuthState = {
   profile: UserProfile | null;
   session: Session | null;
   loading: boolean;
+  error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signOutUser: () => Promise<void>;
@@ -24,6 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   async function loadProfile(uid: string) {
     const p = await fetchProfile(uid);
@@ -31,29 +33,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    const supabase = getSupabase();
     let mounted = true;
 
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!mounted) return;
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      if (data.session?.user) {
-        await loadProfile(data.session.user.id);
-      }
+    let supabase: ReturnType<typeof getSupabase>;
+    try {
+      supabase = getSupabase();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
       setLoading(false);
-    });
+      return;
+    }
+
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!mounted) return;
+        setSession(data.session);
+        setUser(data.session?.user ?? null);
+        if (data.session?.user) {
+          await loadProfile(data.session.user.id);
+        }
+        setLoading(false);
+      } catch (err) {
+        if (!mounted) return;
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        setLoading(false);
+      }
+    })();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, sess) => {
       if (!mounted) return;
-      setSession(sess);
-      setUser(sess?.user ?? null);
-      if (sess?.user) {
-        await loadProfile(sess.user.id);
-      } else {
-        setProfile(null);
+      try {
+        setSession(sess);
+        setUser(sess?.user ?? null);
+        if (sess?.user) {
+          await loadProfile(sess.user.id);
+        } else {
+          setProfile(null);
+        }
+        setLoading(false);
+      } catch (err) {
+        if (!mounted) return;
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => {
